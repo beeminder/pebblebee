@@ -1,0 +1,56 @@
+{
+  "uuid":         "6c26bc3b-0162-4cb8-ae55-4f6613c00148",
+  "shortName":    "Beeminder",
+  "longName":     "Beeminder",
+  "companyName":  "Beeminder",
+  "versionCode":  0,
+  "versionLabel": "0.0.0",
+  "watchapp":     { "watchface": true },
+  "capabilities": [ "configurable" ],
+  "appKeys": {
+    "theme":         0,
+    "style_day_inv": 1,
+    "style_grid":    2,
+    "vibe_hour":     3,
+    "style_am_pm":   6,
+    "style_day":     7,
+    "style_week":    8,
+    "vibe_pat_disconnect":  9,
+    "vibe_pat_connect":     10,
+    "message_type":         11,
+    "send_batt_percent":    12,
+    "send_batt_charging":   13,
+    "send_batt_plugged":    14,
+    "timezone_offset":      15
+  },
+  "resources": {
+    "media": [
+      {
+        "menuIcon": true,
+        "type": "png",
+        "name": "IMAGE_MENU_ICON_DARK",
+        "file": "images/menu_icon_pebblebee_dark.png"
+      },
+      {
+        "type": "png",
+        "name": "IMAGE_BT_NOLINK_ICON",
+        "file": "images/bluetooth_20_20.png"
+      },
+      {
+        "type": "png",
+        "name": "IMAGE_BT_LINKED_ICON",
+        "file": "images/bluetooth_thick_20_20.png"
+      },
+      {
+        "type": "png",
+        "name": "IMAGE_CHARGING_ICON",
+        "file": "images/charging_20_20.png"
+      },
+      {
+        "type": "png",
+        "name": "IMAGE_HOURVIBE_ICON",
+        "file": "images/vibe_20_20.png"
+      }
+    ]
+  }
+}
