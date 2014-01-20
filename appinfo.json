@@ -8,20 +8,26 @@
   "watchapp":     { "watchface": true },
   "capabilities": [ "configurable" ],
   "appKeys": {
-    "theme":         0,
+    "style_inv":     0,
     "style_day_inv": 1,
     "style_grid":    2,
     "vibe_hour":     3,
+    "intl_dowo":     4,
+    "intl_fmt_date": 5,
     "style_am_pm":   6,
     "style_day":     7,
     "style_week":    8,
-    "vibe_pat_disconnect":  9,
-    "vibe_pat_connect":     10,
-    "message_type":         11,
-    "send_batt_percent":    12,
-    "send_batt_charging":   13,
-    "send_batt_plugged":    14,
-    "timezone_offset":      15
+    "intl_fmt_week": 9,
+    "TODO___version":       10,
+    "vibe_pat_disconnect":  11,
+    "vibe_pat_connect":     12,
+    "strftime_format":      13,
+    "track_battery":        14,
+    "message_type":         99,
+    "send_batt_percent":   100,
+    "send_batt_charging":  101,
+    "send_batt_plugged":   102,
+    "timezone_offset":     103
   },
   "resources": {
     "media": [
@@ -29,7 +35,7 @@
         "menuIcon": true,
         "type": "png",
         "name": "IMAGE_MENU_ICON_DARK",
-        "file": "images/menu_icon_pebblebee_dark.png"
+        "file": "images/menu_icon_bee.png"
       },
       {
         "type": "png",
@@ -54,3 +60,6 @@
     ]
   }
 }
+
+
+
