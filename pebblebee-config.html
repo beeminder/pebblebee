@@ -39,14 +39,6 @@
 </div>
 -->
 
-<div data-role="fieldcontain">
-<label for="special-feature">Activate special feature:</label>
-<select name="special-feature" id="special-feature" data-role="slider">
-<option value="off">Off</option>
-<option value="on">On</option>
-</select>
-</div>
-
 <fieldset data-role="controlgroup" data-type="horizontal" data-mini="true">
     <legend>Theme:</legend>
         <input name="key0" id="key0-0" value="0" checked="checked" type="radio">
@@ -55,12 +47,25 @@
         <label for="key0-1">Light</label>
 </fieldset>
 
+<div data-role="collapsible">
+<h3>Test settings</h3>
+
+<div data-role="fieldcontain">
+<label for="special-feature">Activate special feature:</label>
+<select name="special-feature" id="special-feature" data-role="slider">
+<option value="off">Off</option>
+<option value="on">On</option>
+</select>
+</div>
+
 <div data-role="fieldcontain">
 <fieldset data-role="controlgroup">
 <legend>Theme:</legend>
 <input type="checkbox" name="theme" id="theme" class="custom" />
 <label for="theme">Light</label>
 </fieldset>
+</div>
+
 </div>
 
 <div data-role="collapsible">
