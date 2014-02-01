@@ -632,9 +632,9 @@ void datetime_layer_update_callback(Layer *me, GContext* ctx) {
     (void)me;
 
     setColors(ctx);
-    update_date_text();
+    //update_date_text(); //dreeves
     update_time_text();
-    update_datetime_subtext();
+    //update_datetime_subtext(); //dreeves
 }
 
 void statusbar_layer_update_callback(Layer *me, GContext* ctx) {
@@ -678,24 +678,30 @@ void battery_layer_update_callback(Layer *me, GContext* ctx) {
 static void request_timezone() {
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
-  if (iter == NULL) {
-    if (DEBUGLOG) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "iterator is null: %d", result); }
+  if(iter == NULL) {
+    if(DEBUGLOG) { 
+      app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, 
+              "iterator is null: %d", result); 
+    }
     return;
   }
-  if (dict_write_uint8(iter, AK_MESSAGE_TYPE, AK_TIMEZONE_OFFSET) != DICT_OK) {
+  if(dict_write_uint8(iter, AK_MESSAGE_TYPE, AK_TIMEZONE_OFFSET) != DICT_OK) {
     return;
   }
   app_message_outbox_send();
 }
 
 static void battery_status_send(void *data) {
-  if (!settings.track_battery) {
-    return; // if user has chosen not to track battery (saves power w/ appmessages)
+  if(!settings.track_battery) {
+    return; // if track battery setting's off, saves power w/ appmessages
   }
-  if ( (battery_percent  == sent_battery_percent  )
+  if(  (battery_percent  == sent_battery_percent  )
      & (battery_charging == sent_battery_charging )
-     & (battery_plugged  == sent_battery_plugged  ) ) {
-    if (DEBUGLOG) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "repeat battery reading"); }
+     & (battery_plugged  == sent_battery_plugged  )) {
+    if(DEBUGLOG) { 
+      app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, 
+              "repeat battery reading"); 
+    }
     battery_sending = NULL;
     return; // no need to resend the same value
   }
@@ -703,20 +709,26 @@ static void battery_status_send(void *data) {
 
   AppMessageResult result = app_message_outbox_begin(&iter);
 
-  if (iter == NULL) {
-    if (DEBUGLOG) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "iterator is null: %d", result); }
+  if(iter == NULL) {
+    if(DEBUGLOG) { 
+      app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, 
+              "iterator is null: %d", result); 
+    }
     return;
   }
 
-  if (result != APP_MSG_OK) {
-    if (DEBUGLOG) { app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, "Dict write failed to open outbox: %d", (AppMessageResult) result); }
+  if(result != APP_MSG_OK) {
+    if(DEBUGLOG) { 
+      app_log(APP_LOG_LEVEL_DEBUG, __FILE__, __LINE__, 
+             "Dict write failed to open outbox: %d", (AppMessageResult) result);
+    }
     return;
   }
 
-  if (dict_write_uint8(iter, AK_MESSAGE_TYPE, AK_SEND_BATT_PERCENT) != DICT_OK) {
+  if(dict_write_uint8(iter, AK_MESSAGE_TYPE, AK_SEND_BATT_PERCENT) != DICT_OK) {
     return;
   }
-  if (dict_write_uint8(iter, AK_SEND_BATT_PERCENT, battery_percent) != DICT_OK) {
+  if(dict_write_uint8(iter, AK_SEND_BATT_PERCENT, battery_percent) != DICT_OK) {
     return;
   }
   if (dict_write_uint8(iter, AK_SEND_BATT_CHARGING, battery_charging ? 1: 0) != DICT_OK) {
