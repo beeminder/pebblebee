@@ -21,8 +21,8 @@
 <div data-role="content">
 
 <div data-role="fieldcontain">
-  <label for="busr">Beeminder username:</label>
-  <input name="busr" id="busr" placeholder="" value="" 
+  <label for="buser">Beeminder username:</label>
+  <input name="buser" id="buser" placeholder="" value="" 
          data-mini="true" type="text" maxlength="20">
 </div>
 
@@ -119,7 +119,7 @@
 <script>
 function saveOptions() {
   var options = {
-    'busr':              $("#busr").val(),
+    'buser':             $("#buser").val(),
     'bgoal':             $("#bgoal").val(),
     'style_inv':         Number($("input[name=key0]:checked").val()),
     'showcal':           $("#showcal").val(),

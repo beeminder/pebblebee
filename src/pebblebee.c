@@ -2,19 +2,18 @@
 #define DEBUGLOG 0
 #define TRANSLOG 0
 
-static Window *window;
+static Window * window;
 
-static Layer *battery_layer;
-static Layer *datetime_layer;
-static TextLayer *date_layer;
-static TextLayer *time_layer;
-static TextLayer *week_layer;
-static TextLayer *ampm_layer;
-static TextLayer *day_layer;
-static Layer *calendar_layer;
-static Layer *statusbar;
-static Layer *slot_top;
-static Layer *slot_bot;
+static Layer * battery_layer;
+static Layer * datetime_layer;
+static TextLayer * date_layer;
+static TextLayer * time_layer;
+static TextLayer * week_layer;
+static TextLayer * day_layer;
+static Layer * calendar_layer;
+static Layer * statusbar;
+static Layer * slot_top;
+static Layer * slot_bot;
 
 static BitmapLayer *bmp_connection_layer;
 static GBitmap *image_connection_icon;
@@ -53,7 +52,7 @@ static int8_t timezone_offset = 0;
 #define AK_STYLE_GRID    2
 #define AK_VIBE_HOUR     3
 #define AK_INTL_DOWO     4
-#define AK_INTL_FMT_DATE 5 // INCOMPLETE
+//#define AK_INTL_FMT_DATE 5 // INCOMPLETE
 #define AK_STYLE_AM_PM   6
 #define AK_STYLE_DAY     7
 #define AK_STYLE_WEEK    8
@@ -79,7 +78,7 @@ static int8_t timezone_offset = 0;
 #define LAYOUT_SLOT_HEIGHT   72
 #define STAT_BATT_LEFT       96 // LEFT + WIDTH + NIB_WIDTH <= 143
 #define STAT_BATT_TOP         4
-#define STAT_BATT_WIDTH      44 // should be divisible by 10, after subtracting 4 (2 pixels/side for the 'border')
+#define STAT_BATT_WIDTH      44 // should be multiple of 10, after subtracting 4 (2 pixels/side for the 'border')
 #define STAT_BATT_HEIGHT     15
 #define STAT_BATT_NIB_WIDTH   3 // >= 3
 #define STAT_BATT_NIB_HEIGHT  5 // >= 3
@@ -165,316 +164,206 @@ persist_general_lang lang_gen = {
   .abbrMonthsNames = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" },
 };
 
-// How many days are/were in the month
+// How many days in the given month (0 for jan thru 11 for dec)
 int daysInMonth(int mon, int year)
 {
-    mon++; // dec = 0|12, lazily optimized
-
-    // April, June, September and November have 30 Days
-    if (mon == 4 || mon == 6 || mon == 9 || mon == 11) {
-        return 30;
-    } else if (mon == 2) {
-        // Deal with Feburary & Leap years
-        if (year % 400 == 0) {
-            return 29;
-        } else if (year % 100 == 0) {
-            return 28;
-        } else if (year % 4 == 0) {
-            return 29;
-        } else {
-            return 28;
-        }
-    } else {
-        // Most months have 31 days
-        return 31;
-    }
+  if(mon==3 /*apr*/ || mon==5 /*jun*/ || mon==8 /*sep*/ || mon==10 /*nov*/ ) {
+    return 30;
+  } else if(mon==1 /*feb*/) {
+    if     (year % 400 == 0) { return 29; } 
+    else if(year % 100 == 0) { return 28; } 
+    else if(year % 4   == 0) { return 29; } 
+    else                     { return 28; }
+  } else { return 31; }
 }
 
 struct tm *get_time()
 {
-    time_t tt = time(0);
-    return localtime(&tt);
+  time_t tt = time(0);
+  return localtime(&tt);
 }
 
 void setColors(GContext* ctx) {
-    window_set_background_color(window, GColorBlack);
-    graphics_context_set_stroke_color(ctx, GColorWhite);
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_context_set_text_color(ctx, GColorWhite);
+  window_set_background_color(window, GColorBlack);
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_text_color(ctx, GColorWhite);
 }
 
 void setInvColors(GContext* ctx) {
-    window_set_background_color(window, GColorWhite);
-    graphics_context_set_stroke_color(ctx, GColorBlack);
-    graphics_context_set_fill_color(ctx, GColorWhite);
-    graphics_context_set_text_color(ctx, GColorBlack);
+  window_set_background_color(window, GColorWhite);
+  graphics_context_set_stroke_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_text_color(ctx, GColorBlack);
 }
 
-void calendar_layer_update_callback(Layer *me, GContext* ctx) {
-    (void)me;
-    struct tm *currentTime = get_time();
+void calendar_layer_update_callback(Layer* me, GContext* ctx) {
+  (void)me;
+  struct tm * currentTime = get_time();
 
-    int mon = currentTime->tm_mon;
-    int year = currentTime->tm_year + 1900;
-    int daysThisMonth = daysInMonth(mon, year);
-    int specialDay = currentTime->tm_wday - settings.dayOfWeekOffset;
-    if (specialDay < 0) { specialDay += 7; }
-    /* We're going to build an array to hold the dates to be shown in the calendar.
-     *
-     * There are five 'parts' we'll calculate for this (though since we only display 3 weeks, we'll only ever see at most 4 of them)
-     *
-     *   daysVisPrevMonth = days from the previous month that are visible
-     *   daysPriorToToday = days before today (including any days from previous month)
-     *   ( today )
-     *   daysAfterToday   = days after today (including any days from next month)
-     *   daysVisNextMonth = days from the following month that are visible
-     *
-     *  daysPriorToToday + 1 + daysAfterToday = 21, since we display exactly 3 weeks.
-     */
-    int show_last = 1; // show last week?
-    int show_next = 1; // show next week?
-    int calendar[21];
-    int cellNum = 0;   // address for current day table cell: 0-20
-    int daysVisPrevMonth = 0;
-    int daysVisNextMonth = 0;
-    int daysPriorToToday = 7 + currentTime->tm_wday - settings.dayOfWeekOffset;
-    int daysAfterToday   = 6 - currentTime->tm_wday + settings.dayOfWeekOffset;
+  int mon = currentTime->tm_mon;
+  int year = currentTime->tm_year + 1900;
+  int daysThisMonth = daysInMonth(mon, year);
+  int specialDay = currentTime->tm_wday - settings.dayOfWeekOffset;
+  if (specialDay < 0) { specialDay += 7; }
+  /* We're going to build an array to hold the dates to be shown in the calendar.
+   *
+   * There are five 'parts' we'll calculate for this (though since we only display 3 weeks, we'll only ever see at most 4 of them)
+   *
+   *   daysVisPrevMonth = days from the previous month that are visible
+   *   daysPriorToToday = days before today (including any days from previous month)
+   *   ( today )
+   *   daysAfterToday   = days after today (including any days from next month)
+   *   daysVisNextMonth = days from the following month that are visible
+   *
+   *  daysPriorToToday + 1 + daysAfterToday = 21, since we display exactly 3 weeks.
+   */
+  int show_last = 1; // show last week?
+  int show_next = 1; // show next week?
+  int calendar[21];
+  int cellNum = 0;   // address for current day table cell: 0-20
+  int daysVisPrevMonth = 0;
+  int daysVisNextMonth = 0;
+  int daysPriorToToday = 7 + currentTime->tm_wday - settings.dayOfWeekOffset;
+  int daysAfterToday   = 6 - currentTime->tm_wday + settings.dayOfWeekOffset;
 
-    // tm_wday is based on Sunday being the startOfWeek, but Sunday may not be our startOfWeek.
-    if (currentTime->tm_wday < settings.dayOfWeekOffset) { 
-      if (show_last) {
-        daysPriorToToday += 7; // we're <7, so in the 'first' week due to startOfWeek offset - 'add a week' before this one
-      }
-    } else {
-      if (show_next) {
-        daysAfterToday += 7;   // otherwise, we're already in the second week, so 'add a week' after
-      }
+  // tm_wday is based on Sunday being the startOfWeek, but Sunday may not be our startOfWeek.
+  if (currentTime->tm_wday < settings.dayOfWeekOffset) { 
+    if (show_last) {
+      daysPriorToToday += 7; // we're <7, so in the 'first' week due to startOfWeek offset - 'add a week' before this one
     }
-
-    if ( daysPriorToToday >= currentTime->tm_mday ) {
-      // We're showing more days before today than exist this month
-      int daysInPrevMonth = daysInMonth(mon - 1,year); // year only matters for February, which will be the same 'from' March
-
-      // Number of days we'll show from the previous month
-      daysVisPrevMonth = daysPriorToToday - currentTime->tm_mday + 1;
-
-      for (int i = 0; i < daysVisPrevMonth; i++, cellNum++ ) {
-        calendar[cellNum] = daysInPrevMonth + i - daysVisPrevMonth + 1;
-      }
+  } else {
+    if (show_next) {
+      daysAfterToday += 7;   // otherwise, we're already in the second week, so 'add a week' after
     }
+  }
 
-    // optimization: instantiate i to a hot mess, since the first day we show this month may not be the 1st of the month
-    int firstDayShownThisMonth = daysVisPrevMonth + currentTime->tm_mday - daysPriorToToday;
-    for (int i = firstDayShownThisMonth; i < currentTime->tm_mday; i++, cellNum++ ) {
-      calendar[cellNum] = i;
+  if ( daysPriorToToday >= currentTime->tm_mday ) {
+    // We're showing more days before today than exist this month
+    int daysInPrevMonth = daysInMonth(mon - 1,year); // year only matters for February, which will be the same 'from' March
+
+    // Number of days we'll show from the previous month
+    daysVisPrevMonth = daysPriorToToday - currentTime->tm_mday + 1;
+
+    for (int i = 0; i < daysVisPrevMonth; i++, cellNum++ ) {
+      calendar[cellNum] = daysInPrevMonth + i - daysVisPrevMonth + 1;
     }
+  }
 
-    //int currentDay = cellNum; // the current day... we'll style this special
-    calendar[cellNum] = currentTime->tm_mday;
-    cellNum++;
+  // optimization: instantiate i to a hot mess, since the first day we show this month may not be the 1st of the month
+  int firstDayShownThisMonth = daysVisPrevMonth + currentTime->tm_mday - daysPriorToToday;
+  for (int i = firstDayShownThisMonth; i < currentTime->tm_mday; i++, cellNum++ ) {
+    calendar[cellNum] = i;
+  }
 
-    if ( currentTime->tm_mday + daysAfterToday > daysThisMonth ) {
-      daysVisNextMonth = currentTime->tm_mday + daysAfterToday - daysThisMonth;
-    }
+  //int currentDay = cellNum; // the current day... we'll style this special
+  calendar[cellNum] = currentTime->tm_mday;
+  cellNum++;
 
-    // add the days after today until the end of the month/next week, to our array...
-    int daysLeftThisMonth = daysAfterToday - daysVisNextMonth;
-    for (int i = 0; i < daysLeftThisMonth; i++, cellNum++ ) {
-      calendar[cellNum] = i + currentTime->tm_mday + 1;
-    }
+  if ( currentTime->tm_mday + daysAfterToday > daysThisMonth ) {
+    daysVisNextMonth = currentTime->tm_mday + daysAfterToday - daysThisMonth;
+  }
 
-    // add any days in the next month to our array...
-    for (int i = 0; i < daysVisNextMonth; i++, cellNum++ ) {
-      calendar[cellNum] = i + 1;
-    }
+  // add the days after today until the end of the month/next week, to our array...
+  int daysLeftThisMonth = daysAfterToday - daysVisNextMonth;
+  for (int i = 0; i < daysLeftThisMonth; i++, cellNum++ ) {
+    calendar[cellNum] = i + currentTime->tm_mday + 1;
+  }
+
+  // add any days in the next month to our array...
+  for (int i = 0; i < daysVisNextMonth; i++, cellNum++ ) {
+    calendar[cellNum] = i + 1;
+  }
 
 // ---------------------------
 // Now that we've calculated which days go where, we'll move on to the display logic.
 // ---------------------------
 
-    #define CAL_DAYS   7   // number of columns (days of the week)
-    #define CAL_WIDTH  20  // width of columns
-    #define CAL_GAP    1   // gap around calendar
-    #define CAL_LEFT   2   // left side of calendar
-    #define CAL_HEIGHT 18  // How tall rows should be depends on how many weeks there are
+  #define CAL_DAYS   7   // number of columns (days of the week)
+  #define CAL_WIDTH  20  // width of columns
+  #define CAL_GAP    1   // gap around calendar
+  #define CAL_LEFT   2   // left side of calendar
+  #define CAL_HEIGHT 18  // how tall rows should be depends on number of weeks
 
-    int weeks  =  3;  // always display 3 weeks: previous, current, next
-    if (!show_last) { weeks--; }
-    if (!show_next) { weeks--; }
-        
-    GFont normal = fonts_get_system_font(FONT_KEY_GOTHIC_14); // fh = 16
-    GFont bold   = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD); // fh = 22
-    GFont current = normal;
-    int font_vert_offset = 0;
+  int weeks  =  3;  // always display 3 weeks: previous, current, next
+  if(!show_last) { weeks--; }
+  if(!show_next) { weeks--; }
+      
+  GFont normal = fonts_get_system_font(FONT_KEY_GOTHIC_14); // fh = 16
+  GFont bold   = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD); // fh = 22
+  GFont current = normal;
+  int font_vert_offset = 0;
 
-    // generate a light background for the calendar grid
-    setInvColors(ctx);
-    graphics_fill_rect(ctx, GRect (CAL_LEFT + CAL_GAP, CAL_HEIGHT - CAL_GAP, DEVICE_WIDTH - 2 * (CAL_LEFT + CAL_GAP), CAL_HEIGHT * weeks), 0, GCornerNone);
-    setColors(ctx);
-    for (int col = 0; col < CAL_DAYS; col++) {
+  // generate a light background for the calendar grid
+  setInvColors(ctx);
+  graphics_fill_rect(ctx, GRect (CAL_LEFT + CAL_GAP, 
+                                 CAL_HEIGHT - CAL_GAP, 
+                                 DEVICE_WIDTH - 2 * (CAL_LEFT + CAL_GAP), 
+                                 CAL_HEIGHT * weeks), 0, GCornerNone);
+  setColors(ctx);
+  for(int col = 0; col < CAL_DAYS; col++) {
 
-      // Adjust labels by specified offset
-      int weekday = col + settings.dayOfWeekOffset;
-      if (weekday > 6) { weekday -= 7; }
+    // Adjust labels by specified offset
+    int weekday = col + settings.dayOfWeekOffset;
+    if(weekday > 6) { weekday -= 7; }
 
-      if (col == specialDay) {
+    if(col == specialDay) {
+      current = bold;
+      font_vert_offset = -3;
+    }
+    // draw the cell background
+    graphics_fill_rect(ctx, GRect (CAL_WIDTH * col + CAL_LEFT + CAL_GAP, 0, 
+                                   CAL_WIDTH - CAL_GAP, 
+                                   CAL_HEIGHT - CAL_GAP), 0, GCornerNone);
+
+    // draw the cell text
+    graphics_draw_text(ctx, lang_gen.abbrDaysOfWeek[weekday], current, 
+      GRect(CAL_WIDTH * col + CAL_LEFT + CAL_GAP, 
+            CAL_GAP + font_vert_offset, 
+            CAL_WIDTH, CAL_HEIGHT), 
+      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL); 
+    if(col == specialDay) {
+      current = normal;
+      font_vert_offset = 0;
+    }
+  }
+
+  // draw the individual calendar rows/columns
+  int week = 0;
+  for(int row = 1; row <= 3; row++) {
+    if(row == 1 && !show_last) { continue; }
+    if(row == 3 && !show_next) { continue; }
+    week++;
+    for(int col = 0; col < CAL_DAYS; col++) {
+      if(row == 2 && col == specialDay) {
+        setInvColors(ctx);
         current = bold;
         font_vert_offset = -3;
       }
+
       // draw the cell background
-      graphics_fill_rect(ctx, GRect (CAL_WIDTH * col + CAL_LEFT + CAL_GAP, 0, CAL_WIDTH - CAL_GAP, CAL_HEIGHT - CAL_GAP), 0, GCornerNone);
+      graphics_fill_rect(ctx, GRect (CAL_WIDTH * col + CAL_LEFT + CAL_GAP, 
+                                     CAL_HEIGHT * week, 
+                                     CAL_WIDTH - CAL_GAP, 
+                                     CAL_HEIGHT - CAL_GAP), 0, GCornerNone);
 
       // draw the cell text
-      graphics_draw_text(ctx, lang_gen.abbrDaysOfWeek[weekday], current, GRect(CAL_WIDTH * col + CAL_LEFT + CAL_GAP, CAL_GAP + font_vert_offset, CAL_WIDTH, CAL_HEIGHT), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL); 
-      if (col == specialDay) {
+      char date_text[3];
+      snprintf(date_text, sizeof(date_text), "%d", calendar[col+7*(row-1)]);
+      graphics_draw_text(ctx, date_text, current, 
+        GRect(CAL_WIDTH * col + CAL_LEFT, 
+              CAL_HEIGHT * week - CAL_GAP + font_vert_offset, 
+              CAL_WIDTH, 
+              CAL_HEIGHT), 
+        GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL); 
+
+      if(row == 2 && col == specialDay) {
+        setColors(ctx);
         current = normal;
         font_vert_offset = 0;
       }
     }
-
-    // draw the individual calendar rows/columns
-    int week = 0;
-    for (int row = 1; row <= 3; row++) {
-      if (row == 1 && !show_last) { continue; }
-      if (row == 3 && !show_next) { continue; }
-      week++;
-      for (int col = 0; col < CAL_DAYS; col++) {
-        if ( row == 2 && col == specialDay) {
-          setInvColors(ctx);
-          current = bold;
-          font_vert_offset = -3;
-        }
-
-        // draw the cell background
-        graphics_fill_rect(ctx, GRect (CAL_WIDTH * col + CAL_LEFT + CAL_GAP, CAL_HEIGHT * week, CAL_WIDTH - CAL_GAP, CAL_HEIGHT - CAL_GAP), 0, GCornerNone);
-
-        // draw the cell text
-        char date_text[3];
-        snprintf(date_text, sizeof(date_text), "%d", calendar[col + 7 * (row - 1)]);
-        graphics_draw_text(ctx, date_text, current, GRect(CAL_WIDTH * col + CAL_LEFT, CAL_HEIGHT * week - CAL_GAP + font_vert_offset, CAL_WIDTH, CAL_HEIGHT), GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL); 
-
-        if ( row == 2 && col == specialDay) {
-          setColors(ctx);
-          current = normal;
-          font_vert_offset = 0;
-        }
-      }
-    }
-}
-
-void update_date_text() {
-    struct tm *currentTime = get_time();
-
-    // TODO - 18 @ this font is approaching the max width, localization may require smaller fonts, or no year...
-    //September 11, 2013 => 18 chars
-    //123456789012345678
-
-    static char date_text[15];
-    static char date_text_2[15];
-    static char date_string[30];
-    char *strftime_format;
-    // http://www.cplusplus.com/reference/ctime/strftime/
-
-    if (settings.date_format < 215) { // localized date formats...
-      switch ( settings.date_format ) {
-      case 0: // MMMM DD, YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d, %Y", currentTime); // DD, YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_datetime.monthsNames[currentTime->tm_mon], date_text); // prefix Month
-        break;
-      case 1: // MMMM DD, 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d, '%y", currentTime); // DD, 'YY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_datetime.monthsNames[currentTime->tm_mon], date_text); // prefix Month
-        break;
-      case 2: // Mmm DD, YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d, %Y", currentTime); // DD, YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_gen.abbrMonthsNames[currentTime->tm_mon], date_text); // prefix Mon
-        break;
-      case 3: // Mmm DD, 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d, '%y", currentTime); // DD, 'YY
-        snprintf(date_string, sizeof(date_string), "%s %s", lang_gen.abbrMonthsNames[currentTime->tm_mon], date_text); // prefix Mon
-        break;
-      case 11: // D MMMM YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "%Y", currentTime); // YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text_2, lang_datetime.monthsNames[currentTime->tm_mon], date_text); // insert Month
-        break;
-      case 12: // D MMMM 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "'%y", currentTime); // YY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text_2, lang_datetime.monthsNames[currentTime->tm_mon], date_text); // insert Month
-        break;
-      case 13: // D Mmm YYYY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "%Y", currentTime); // YYYY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text_2, lang_gen.abbrMonthsNames[currentTime->tm_mon], date_text); // insert Mon
-        break;
-      case 14: // D Mmm 'YY (localized)
-        strftime(date_text, sizeof(date_text), "%d", currentTime); // D
-        strftime(date_text_2, sizeof(date_text_2), "'%y", currentTime); // YY
-        snprintf(date_string, sizeof(date_string), "%s %s %s", date_text_2, lang_gen.abbrMonthsNames[currentTime->tm_mon], date_text); // insert Mon
-        break;
-      }
-    } else { // non-localized date formats, straight strftime function calls
-      switch ( settings.date_format ) {
-      // DD MM YYYY (%d %m %Y)
-      case 215: strftime_format = "%d.%m.%Y"; break; // DD.MM.YYYY
-      case 216: strftime_format = "%d-%m-%Y"; break; // DD-MM-YYYY
-      case 217: strftime_format = "%d/%m/%Y"; break; // DD/MM/YYYY
-      case 218: strftime_format = "%d %m %Y"; break; // DD MM YYYY
-      case 219: strftime_format = "%d%m%Y"; break;   // DDMMYYYY
-      // DD MM YY (%d %m %y)
-      case 220: strftime_format = "%d.%m.%y"; break; // DD.MM.YY
-      case 221: strftime_format = "%d-%m-%y"; break; // DD-MM-YY
-      case 222: strftime_format = "%d/%m/%y"; break; // DD/MM/YY
-      case 223: strftime_format = "%d %m %y"; break; // DD MM YY
-      case 224: strftime_format = "%d%m%y"; break;   // DDMMYY
-      // dd MM YYYY (%e %m %Y)
-      case 225: strftime_format = "%e.%m.%Y"; break; // dd.MM.YYYY
-      case 226: strftime_format = "%e-%m-%Y"; break; // dd-MM-YYYY
-      case 227: strftime_format = "%e/%m/%Y"; break; // dd/MM/YYYY
-      case 228: strftime_format = "%e %m %Y"; break; // dd MM YYYY
-      case 229: strftime_format = "%e%m%Y"; break;   // ddMMYYYY
-      // dd MM YY (%e %m %y)
-      case 230: strftime_format = "%e.%m.%y"; break; // dd.MM.YY
-      case 231: strftime_format = "%e-%m-%y"; break; // dd-MM-YY
-      case 232: strftime_format = "%e/%m/%y"; break; // dd/MM/YY
-      case 233: strftime_format = "%e %m %y"; break; // dd MM YY
-      case 234: strftime_format = "%e%m%y"; break;   // ddMMYY
-
-      // YYYY MM DD (%Y %m %d)
-      case 235: strftime_format = "%Y.%m.%d"; break; // YYYY.MM.DD
-      case 236: strftime_format = "%Y-%m-%d"; break; // YYYY-MM-DD
-      case 237: strftime_format = "%Y/%m/%d"; break; // YYYY/MM/DD
-      case 238: strftime_format = "%Y %m %d"; break; // YYYY MM DD
-      case 239: strftime_format = "%Y%m%d"; break;   // YYYYMMDD
-      // YY MM DD (%y %m %d)
-      case 240: strftime_format = "%y.%m.%d"; break; // YY.MM.DD
-      case 241: strftime_format = "%y-%m-%d"; break; // YY-MM-DD
-      case 242: strftime_format = "%y/%m/%d"; break; // YY/MM/DD
-      case 243: strftime_format = "%y %m %d"; break; // YY MM DD
-      case 244: strftime_format = "%y%m%d"; break;   // YYMMDD
-      // YYYY MM dd (%Y %m %e)
-      case 245: strftime_format = "%Y.%m.%e"; break; // YYYY.MM.dd
-      case 246: strftime_format = "%Y-%m-%e"; break; // YYYY-MM-dd
-      case 247: strftime_format = "%Y/%m/%e"; break; // YYYY/MM/dd
-      case 248: strftime_format = "%Y %m %e"; break; // YYYY MM dd
-      case 249: strftime_format = "%Y%m%e"; break;   // YYYYMMdd
-      // YY MM dd (%y %m %e)
-      case 250: strftime_format = "%y.%m.%e"; break; // YY.MM.dd
-      case 251: strftime_format = "%y-%m-%e"; break; // YY-MM-dd
-      case 252: strftime_format = "%y/%m/%e"; break; // YY/MM/dd
-      case 253: strftime_format = "%y %m %e"; break; // YY MM dd
-      case 254: strftime_format = "%y%m%e"; break;   // YYMMdd
-      // reserve 255 for a 'custom strftime string via AppMessage provided by config page'
-      case 255: strftime_format = settings.strftime_format; break;
-      }
-
-      // apply our (non-localized) strftime format
-      strftime(date_text, sizeof(date_text), strftime_format, currentTime);  // DD.MM.YYYY
-      snprintf(date_string, sizeof(date_string), "%s", date_text); // straight copy
-    }
-
-    text_layer_set_text(date_layer, date_string);
+  }
 }
 
 void update_time_text() {
@@ -483,7 +372,7 @@ void update_time_text() {
 
   char *time_format;
 
-  if (clock_is_24h_style()) {
+  if(clock_is_24h_style()) {
     time_format = "%R";
   } else {
     time_format = "%I:%M";
@@ -499,10 +388,10 @@ void update_time_text() {
     memmove(time_text, &time_text[1], sizeof(time_text) - 1);
   }
 
-  // I would love to just use clock_copy_time_string, but it refuses to center properly in 12-hour time (see Kludge above).
+  // would love to just use clock_copy_time_string, but it refuses to center 
+  // properly in 12-hour time (see Kludge above)
   //clock_copy_time_string(time_text, sizeof(time_text));
   text_layer_set_text(time_layer, time_text);
-
 }
 
 void update_day_text(TextLayer *which_layer) {
@@ -531,16 +420,6 @@ void update_week_text(TextLayer *which_layer) {
   text_layer_set_text(which_layer, week_text);
 }
 
-void update_ampm_text(TextLayer *which_layer) {
-  struct tm *currentTime = get_time();
-
-  if (currentTime->tm_hour < 12 ) {
-    text_layer_set_text(which_layer, lang_gen.abbrTime[0]); //  0-11 AM
-  } else {
-    text_layer_set_text(which_layer, lang_gen.abbrTime[1]); // 12-23 PM
-  }
-}
-
 
 void update_timezone_text(TextLayer *which_layer) {
   static char timezone_text[7];
@@ -553,7 +432,7 @@ void update_timezone_text(TextLayer *which_layer) {
 }
 
 void process_show_week() {
-  switch ( settings.show_week ) {
+  switch(settings.show_week) {
   case 0: // Hide
     //layer_set_hidden(text_layer_get_layer(week_layer), true);
     return;
@@ -562,9 +441,6 @@ void process_show_week() {
     break;
   case 2: // Show Timezone
     update_timezone_text(week_layer);
-    break;
-  case 3: // Show AM/PM
-    update_ampm_text(week_layer);
     break;
   }
 }
@@ -586,55 +462,34 @@ void process_show_day() {
   case 4: // Show Week
     update_week_text(day_layer);
     break;
-  case 5: // Show AM/PM
-    update_ampm_text(day_layer);
-    break;
-  }
-}
-
-void process_show_ampm() {
-  switch ( settings.show_am_pm ) {
-  case 0: // Hide
-    //layer_set_hidden(text_layer_get_layer(ampm_layer), true);
-    return;
-  case 1: // Show AM/PM
-    update_ampm_text(ampm_layer);
-    break;
-  case 2: // Show Timezone
-    update_timezone_text(ampm_layer);
-    break;
-  case 3: // Show Week
-    update_week_text(ampm_layer);
-    break;
   }
 }
 
 void position_time_layer() {
   // potentially adjust the clock position, if we've added/removed the week, day, or AM/PM layers
   int time_offset = 0;
-  if (!settings.show_day && !settings.show_week) {
+  if(!settings.show_day && !settings.show_week) {
     time_offset = 4;
-    if (!settings.show_am_pm) {
+    if(!settings.show_am_pm) {
       time_offset = 8;
     }
   }
-  layer_set_frame( text_layer_get_layer(time_layer), GRect(REL_CLOCK_TIME_LEFT, REL_CLOCK_TIME_TOP + time_offset, DEVICE_WIDTH, REL_CLOCK_TIME_HEIGHT) );
+  layer_set_frame( text_layer_get_layer(time_layer), 
+    GRect(REL_CLOCK_TIME_LEFT, 
+          REL_CLOCK_TIME_TOP + time_offset, 
+          DEVICE_WIDTH, REL_CLOCK_TIME_HEIGHT) );
 }
 
 void update_datetime_subtext() {
     process_show_week();
     process_show_day();
-    process_show_ampm();
     position_time_layer();
 }
 
-void datetime_layer_update_callback(Layer *me, GContext* ctx) {
+void datetime_layer_update_callback(Layer* me, GContext* ctx) {
     (void)me;
-
     setColors(ctx);
-    //update_date_text(); //dreeves
     update_time_text();
-    //update_datetime_subtext(); //dreeves
 }
 
 void statusbar_layer_update_callback(Layer *me, GContext* ctx) {
@@ -827,9 +682,10 @@ void generate_vibe(uint32_t vibe_pattern_number) {
 }
 
 void update_connection() {
-  text_layer_set_text(text_connection_layer, bluetooth_connected ? lang_gen.statuses[0] : lang_gen.statuses[1]) ;
-  if (bluetooth_connected) {
-    generate_vibe(settings.vibe_pat_connect);  // non-op, by default
+  text_layer_set_text(text_connection_layer, 
+    bluetooth_connected ? lang_gen.statuses[0] : lang_gen.statuses[1]);
+  if(bluetooth_connected) {
+    generate_vibe(settings.vibe_pat_connect);  // no-op by default
     bitmap_layer_set_bitmap(bmp_connection_layer, image_connection_icon);
   } else {
     generate_vibe(settings.vibe_pat_disconnect);  // because, this is bad...
@@ -925,16 +781,6 @@ static void window_load(Window *window) {
     layer_set_hidden(text_layer_get_layer(day_layer), true);
   }
 
-  ampm_layer = text_layer_create( GRect(0, REL_CLOCK_SUBTEXT_TOP, 140, 16) );
-  text_layer_set_text_color(ampm_layer, GColorWhite);
-  text_layer_set_background_color(ampm_layer, GColorClear);
-  text_layer_set_font(ampm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_alignment(ampm_layer, GTextAlignmentRight);
-  layer_add_child(datetime_layer, text_layer_get_layer(ampm_layer));
-  if ( settings.show_am_pm == 0 ) {
-    layer_set_hidden(text_layer_get_layer(ampm_layer), true);
-  }
-
   update_datetime_subtext();
 
   text_connection_layer = text_layer_create( GRect(20+STAT_BT_ICON_LEFT, 0, 72, 22) );
@@ -976,7 +822,6 @@ static void window_unload(Window *window) {
   layer_destroy(inverter_layer_get_layer(battery_meter_layer));
   layer_destroy(text_layer_get_layer(text_battery_layer));
   layer_destroy(text_layer_get_layer(text_connection_layer));
-  layer_destroy(text_layer_get_layer(ampm_layer));
   layer_destroy(text_layer_get_layer(day_layer));
   layer_destroy(text_layer_get_layer(week_layer));
   layer_destroy(text_layer_get_layer(time_layer));
@@ -1009,9 +854,9 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
 {
   update_time_text();
 
-  if (units_changed & MONTH_UNIT) {
-    update_date_text();
-  }
+  //if (units_changed & MONTH_UNIT) {
+  //  update_date_text();
+  //}
 
   if (units_changed & HOUR_UNIT) {
     request_timezone();
@@ -1022,7 +867,7 @@ void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed)
   }
 
   if (units_changed & DAY_UNIT) {
-    layer_mark_dirty(datetime_layer);
+    //layer_mark_dirty(datetime_layer);
     layer_mark_dirty(calendar_layer);
   }
 
@@ -1089,11 +934,11 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
     }
 
     // AK_INTL_FMT_DATE == date format (strftime + manual localization)
-    Tuple *FMT_DATE = dict_find(received, AK_INTL_FMT_DATE);
-    if (FMT_DATE != NULL) {
-      settings.date_format = FMT_DATE->value->uint8;
-      update_date_text();
-    }
+    //Tuple *FMT_DATE = dict_find(received, AK_INTL_FMT_DATE);
+    //if (FMT_DATE != NULL) {
+    //  settings.date_format = FMT_DATE->value->uint8;
+    //  update_date_text();
+    //}
 
     // AK_STYLE_WEEK
     Tuple *style_week = dict_find(received, AK_STYLE_WEEK);
@@ -1120,17 +965,6 @@ void in_configuration_handler(DictionaryIterator *received, void *context) {
         layer_set_hidden(text_layer_get_layer(day_layer), false);
       }  else {
         layer_set_hidden(text_layer_get_layer(day_layer), true);
-      }
-    }
-
-    // AK_STYLE_AM_PM
-    Tuple *style_am_pm = dict_find(received, AK_STYLE_AM_PM);
-    if (style_am_pm != NULL) {
-      settings.show_am_pm = style_am_pm->value->uint8;
-      if ( settings.show_am_pm ) {
-        layer_set_hidden(text_layer_get_layer(ampm_layer), false);
-      }  else {
-        layer_set_hidden(text_layer_get_layer(ampm_layer), true);
       }
     }
 
